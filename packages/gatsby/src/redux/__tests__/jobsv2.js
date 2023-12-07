@@ -1,9 +1,25 @@
-const jobsManager = require(`../../utils/jobs/manager`)
-jest.spyOn(jobsManager, `enqueueJob`)
-jest.spyOn(jobsManager, `removeInProgressJob`)
-jest.mock(`uuid/v4`, () => () => `1234`)
-
 import { jobsV2Reducer as jobsReducer } from "../reducers/jobsv2"
+import * as jobsManager from "../../utils/jobs/manager"
+
+jest.mock(`gatsby-core-utils`, () => {
+  return {
+    ...jest.requireActual(`gatsby-core-utils`),
+    isCI: () => true,
+    uuid: {
+      v4: jest.fn(() => `1234`),
+    },
+  }
+})
+
+jest.mock(`../../utils/jobs/manager`, () => {
+  const realJobsManager = jest.requireActual(`../../utils/jobs/manager`)
+
+  return {
+    ...realJobsManager,
+    enqueueJob: jest.fn(realJobsManager.enqueueJob),
+    removeInProgressJob: jest.fn(realJobsManager.removeInProgressJob),
+  }
+})
 
 describe(`Job v2 actions/reducer`, () => {
   const plugin = {
@@ -74,7 +90,20 @@ describe(`Job v2 actions/reducer`, () => {
       inputPaths: [],
     })
     expect(jobsManager.removeInProgressJob).toHaveBeenCalledTimes(1)
-    expect(jobsManager.enqueueJob).toMatchSnapshot()
+    expect(jobsManager.enqueueJob).toHaveBeenCalledWith({
+      args: {},
+      contentDigest: `aa9932d515707737e953173cd9c77306`,
+      id: `1234`,
+      inputPaths: [],
+      name: `TEST_JOB`,
+      outputDir: `/public/static`,
+      plugin: {
+        isLocal: false,
+        name: `test-plugin`,
+        resolve: `/node_modules/test-plugin`,
+        version: `1.0.0`,
+      },
+    })
   })
 
   it(`should return the result when job already ran`, async () => {

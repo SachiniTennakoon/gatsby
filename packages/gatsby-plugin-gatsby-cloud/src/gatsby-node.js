@@ -11,8 +11,8 @@ import buildHeadersProgram from "./build-headers-program"
 import copyFunctionsManifest from "./copy-functions-manifest"
 import createRedirects from "./create-redirects"
 import createSiteConfig from "./create-site-config"
-import { DEFAULT_OPTIONS, BUILD_HTML_STAGE, BUILD_CSS_STAGE } from "./constants"
-import { emitRoutes, emitFileNodes } from "./ipc"
+import { DEFAULT_OPTIONS, BUILD_HTML_STAGE } from "./constants"
+import { emitRoutes, emitFileNodes, emitTotalRenderedPageCount } from "./ipc"
 
 const assetsManifest = {}
 
@@ -21,7 +21,7 @@ process.env.GATSBY_PREVIEW_INDICATOR_ENABLED =
 
 // Inject a webpack plugin to get the file manifests so we can translate all link headers
 exports.onCreateWebpackConfig = ({ actions, stage }) => {
-  if (stage !== BUILD_HTML_STAGE && stage !== BUILD_CSS_STAGE) {
+  if (stage === BUILD_HTML_STAGE) {
     return
   }
 
@@ -35,15 +35,12 @@ exports.onCreateWebpackConfig = ({ actions, stage }) => {
   })
 }
 
-exports.onPostBuild = async (
-  { store, pathPrefix, getNodesByType },
-  userPluginOptions
-) => {
-  const pluginData = makePluginData(store, assetsManifest, pathPrefix)
-
+exports.onPostBuild = async ({ store }, userPluginOptions) => {
   const pluginOptions = { ...DEFAULT_OPTIONS, ...userPluginOptions }
 
   const { redirects, pageDataStats, nodes, pages } = store.getState()
+
+  const pluginData = makePluginData(store, assetsManifest)
 
   /**
    * Emit via IPC routes for which pages are non SSG
@@ -53,8 +50,10 @@ exports.onPostBuild = async (
   for (const [pathname, page] of pages) {
     if (page.mode && page.mode !== `SSG`) {
       index++
-      batch[generateHtmlPath(``, pathname)] = page.mode
-      batch[generatePageDataPath(``, pathname)] = page.mode
+
+      const fullPathName = page.matchPath ? page.matchPath : pathname
+      batch[generateHtmlPath(``, fullPathName)] = page.mode
+      batch[generatePageDataPath(``, fullPathName)] = page.mode
 
       if (index % 1000 === 0) {
         await emitRoutes(batch)
@@ -111,10 +110,12 @@ exports.onPostBuild = async (
   }
 
   await Promise.all([
+    ensureEmittingFileNodesFinished,
     buildHeadersProgram(pluginData, pluginOptions),
     createSiteConfig(pluginData, pluginOptions),
     createRedirects(pluginData, redirects, rewrites),
     copyFunctionsManifest(pluginData),
+    emitTotalRenderedPageCount(pages.size),
   ])
 }
 
@@ -154,18 +155,28 @@ const pluginOptionsSchema = function ({ Joi }) {
 
 exports.pluginOptionsSchema = pluginOptionsSchema
 
-exports.onPostBootstrap = async ({ getNodesByType }) => {
-  /**
-   * Emit via IPC absolute paths to files that should be stored
-   */
-  const fileNodes = getNodesByType(`File`)
+/**
+ * We emit File Nodes via IPC and we need to make sure build doesn't finish before all of
+ * messages were sent.
+ */
+let ensureEmittingFileNodesFinished
+exports.onPreBootstrap = ({ emitter, getNodesByType }) => {
+  emitter.on(`API_FINISHED`, action => {
+    if (action.payload.apiName !== `sourceNodes`) {
+      return
+    }
 
-  // TODO: This is missing the cacheLocations .cache/caches + .cache/caches-lmdb
-  let fileNodesEmitted
-  for (const file of fileNodes) {
-    fileNodesEmitted = emitFileNodes({
-      path: file.absolutePath,
-    })
-  }
-  await fileNodesEmitted
+    async function doEmitFileNodes() {
+      const fileNodes = getNodesByType(`File`)
+
+      // TODO: This is missing the cacheLocations .cache/caches + .cache/caches-lmdb
+      for (const file of fileNodes) {
+        await emitFileNodes({
+          path: file.absolutePath,
+        })
+      }
+    }
+
+    ensureEmittingFileNodesFinished = doEmitFileNodes()
+  })
 }

@@ -10,6 +10,12 @@ export const KNOWN_CONFIG_KEYS = [
   `plugins`,
   `proxy`,
   `developMiddleware`,
+  `jsxRuntime`,
+  `jsxImportSource`,
+  `trailingSlash`,
+  `graphqlTypegen`,
+  `headers`,
+  `adapter`,
 ]
 
 export function didYouMean(

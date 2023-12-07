@@ -12,6 +12,7 @@ jest.mock(`gatsby-telemetry`, () => {
     decorateEvent: jest.fn(),
     trackError: jest.fn(),
     trackCli: jest.fn(),
+    isTrackingEnabled: jest.fn(),
   }
 })
 
@@ -20,6 +21,7 @@ let worker: GatsbyTestWorkerPool | undefined
 const dummyPagePayload = {
   path: `/foo/`,
   component: `/foo`,
+  componentPath: `/foo`,
 }
 
 describe(`worker (share-state)`, () => {
@@ -27,9 +29,9 @@ describe(`worker (share-state)`, () => {
     store.dispatch({ type: `DELETE_CACHE` })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     if (worker) {
-      worker.end()
+      await Promise.all(worker.end())
       worker = undefined
     }
   })
@@ -96,13 +98,17 @@ describe(`worker (share-state)`, () => {
       Object {
         "components": Map {
           "/foo" => Object {
+            "Head": false,
             "componentChunkName": undefined,
             "componentPath": "/foo",
+            "config": false,
             "isInBootstrap": true,
+            "isSlice": false,
             "pages": Set {
               "/foo/",
             },
             "query": "",
+            "serverData": false,
           },
         },
       }
@@ -116,13 +122,17 @@ describe(`worker (share-state)`, () => {
       Object {
         "components": Map {
           "/foo" => Object {
+            "Head": false,
             "componentChunkName": undefined,
             "componentPath": "/foo",
+            "config": false,
             "isInBootstrap": true,
+            "isSlice": false,
             "pages": Set {
               "/foo/",
             },
             "query": "",
+            "serverData": false,
           },
         },
         "staticQueryComponents": Map {
@@ -227,10 +237,14 @@ describe(`worker (share-state)`, () => {
 
     expect(components).toMatchInlineSnapshot(`
       Object {
+        "Head": false,
         "componentPath": "/foo",
+        "config": false,
         "isInBootstrap": true,
+        "isSlice": false,
         "pages": Object {},
         "query": "I'm a page query",
+        "serverData": false,
       }
     `)
 

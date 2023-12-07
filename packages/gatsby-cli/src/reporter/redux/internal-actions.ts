@@ -1,4 +1,4 @@
-import uuidv4 from "uuid"
+import { uuid } from "gatsby-core-utils"
 import { trackCli } from "gatsby-telemetry"
 import signalExit from "signal-exit"
 import { Dispatch } from "redux"
@@ -29,8 +29,7 @@ import {
   getElapsedTimeMS,
   getGlobalStatus,
 } from "./utils"
-import { IStructuredError } from "../../structured-errors/types"
-import { ErrorCategory } from "../../structured-errors/error-map"
+import { IStructuredError, ErrorCategory } from "../../structured-errors/types"
 import { IRenderPageArgs } from "../types"
 
 const ActivityStatusToLogLevel = {
@@ -128,7 +127,7 @@ export const createLog = ({
     type: Actions.Log,
     payload: {
       level,
-      text,
+      text: !text ? `\u2800` : text,
       statusText,
       duration,
       group,
@@ -199,7 +198,7 @@ export const startActivity = ({
       type: Actions.StartActivity,
       payload: {
         id,
-        uuid: uuidv4(),
+        uuid: uuid.v4(),
         text,
         type,
         status,

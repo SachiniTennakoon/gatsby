@@ -8,7 +8,15 @@ import { buildNonNodeQueries } from "./build-and-store-ingestible-root-field-non
 import { buildNodeQueries } from "./build-queries-from-introspection/build-node-queries"
 import { cacheFetchedTypes } from "./cache-fetched-types"
 import { writeQueriesToDisk } from "./write-queries-to-disk"
-
+import { withPluginKey } from "~/store"
+/**
+ * This fn is called during schema customization.
+ * It pulls in the remote WPGraphQL schema, caches it,
+ * then builds queries and stores a transformed object
+ * later used in schema customization.
+ *
+ * This fn must run in all PQR workers.
+ */
 const ingestRemoteSchema = async (helpers, pluginOptions) => {
   if (process.env.NODE_ENV === `development`) {
     // running this code block in production is problematic for PQR
@@ -16,7 +24,7 @@ const ingestRemoteSchema = async (helpers, pluginOptions) => {
     // we'll return early in most workers when it checks the cache here
     // Since PQR doesn't run in development and this code block was only meant for dev
     // it should be ok to wrap it in this if statement
-    const schemaTimeKey = `lastIngestRemoteSchemaTime`
+    const schemaTimeKey = withPluginKey(`lastIngestRemoteSchemaTime`)
     const lastIngestRemoteSchemaTime = await helpers.cache.get(schemaTimeKey)
 
     const ingestedSchemaInLastTenSeconds =
@@ -50,10 +58,10 @@ const ingestRemoteSchema = async (helpers, pluginOptions) => {
       pluginOptions
     )
   } catch (e) {
-    helpers.reporter.panic(e)
+    activity.panic(e)
+  } finally {
+    activity.end()
   }
-
-  activity.end()
 }
 
 export { ingestRemoteSchema }

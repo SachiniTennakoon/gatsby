@@ -1,60 +1,67 @@
-import { runApisInSteps } from "./utils/run-steps"
+import { runApiSteps } from "./utils/run-steps"
 import * as steps from "./steps"
-import { INITIALIZE_PLUGIN_LIFECYCLE_NAME_MAP } from "./constants"
 
-let coreSupportsOnPluginInit: `unstable` | `stable` | undefined
-
-try {
-  const { isGatsbyNodeLifecycleSupported } = require(`gatsby-plugin-utils`)
-  if (isGatsbyNodeLifecycleSupported(`onPluginInit`)) {
-    coreSupportsOnPluginInit = `stable`
-  } else if (isGatsbyNodeLifecycleSupported(`unstable_onPluginInit`)) {
-    coreSupportsOnPluginInit = `unstable`
-  }
-} catch (e) {
-  console.error(`Could not check if Gatsby supports onPluginInit lifecycle`)
-}
-
-const initializePluginLifeCycleName: string =
-  INITIALIZE_PLUGIN_LIFECYCLE_NAME_MAP[coreSupportsOnPluginInit] || `onPreInit`
-
-module.exports = runApisInSteps({
-  [initializePluginLifeCycleName]: [
+exports.onPluginInit = runApiSteps(
+  [
     steps.setGatsbyApiToState,
     steps.setErrorMap,
-    steps.tempPreventMultipleInstances,
+    steps.setRequestHeaders,
+    steps.hideAuthPluginOptions,
   ],
+  `onPluginInit`
+)
 
-  pluginOptionsSchema: steps.pluginOptionsSchema,
+exports.onPreBootstrap = runApiSteps(
+  [steps.restoreAuthPluginOptions],
+  `onPreBootstrap`
+)
 
-  createSchemaCustomization: [
+exports.pluginOptionsSchema = steps.pluginOptionsSchema
+
+exports.createSchemaCustomization = runApiSteps(
+  [
     steps.setGatsbyApiToState,
     steps.ensurePluginRequirementsAreMet,
     steps.ingestRemoteSchema,
     steps.createSchemaCustomization,
   ],
+  `createSchemaCustomization`
+)
 
-  sourceNodes: [
+exports.sourceNodes = runApiSteps(
+  [
     steps.setGatsbyApiToState,
     steps.persistPreviouslyCachedImages,
     steps.sourceNodes,
     steps.setImageNodeIdCache,
   ],
+  `sourceNodes`
+)
 
-  onPreExtractQueries: [
-    steps.onPreExtractQueriesInvokeLeftoverPreviewCallbacks,
-  ],
+exports.onPreExtractQueries = runApiSteps(
+  [steps.onPreExtractQueriesInvokeLeftoverPreviewCallbacks],
+  `onPreExtractQueries`
+)
 
-  onPostBuild: [steps.setImageNodeIdCache, steps.logPostBuildWarnings],
+exports.onPostBuild = runApiSteps(
+  [steps.setImageNodeIdCache, steps.logPostBuildWarnings],
+  `onPostBuild`
+)
 
-  onCreatePage: [
+exports.onCreatePage = runApiSteps(
+  [
     steps.onCreatepageSavePreviewNodeIdToPageDependency,
     steps.onCreatePageRespondToPreviewStatusQuery,
   ],
+  `onCreatePage`
+)
 
-  onCreateDevServer: [
+exports.onCreateDevServer = runApiSteps(
+  [
+    steps.imageRoutes,
     steps.setImageNodeIdCache,
     steps.logPostBuildWarnings,
     steps.startPollingForContentUpdates,
   ],
-})
+  `onCreateDevServer`
+)

@@ -2,6 +2,7 @@ import { WorkerPool } from "gatsby-worker"
 import { chunk } from "lodash"
 import reporter from "gatsby-cli/lib/reporter"
 import { cpuCoreCount } from "gatsby-core-utils"
+import { Span } from "opentracing"
 
 import { IGroupedQueryIds } from "../../services"
 import { initJobsMessagingInMainProcess } from "../jobs/worker-messaging"
@@ -46,22 +47,37 @@ function handleRunQueriesInWorkersQueueError(e: Error): never {
 export async function runQueriesInWorkersQueue(
   pool: GatsbyWorkerPool,
   queryIds: IGroupedQueryIds,
-  chunkSize = queriesChunkSize
+  opts?: {
+    chunkSize?: number
+    parentSpan?: Span
+  }
 ): Promise<void> {
   const activity = reporter.createProgress(
     `run queries in workers`,
-    queryIds.staticQueryIds.length + queryIds.pageQueryIds.length
+    queryIds.staticQueryIds.length + queryIds.pageQueryIds.length,
+    0,
+    { parentSpan: opts?.parentSpan }
   )
   activity.start()
   try {
-    const staticQuerySegments = chunk(queryIds.staticQueryIds, chunkSize)
-    const pageQuerySegments = chunk(queryIds.pageQueryIds, chunkSize)
+    const staticQuerySegments = chunk(
+      queryIds.staticQueryIds,
+      opts?.chunkSize ?? queriesChunkSize
+    )
+    const pageQuerySegments = chunk(
+      queryIds.pageQueryIds,
+      opts?.chunkSize ?? queriesChunkSize
+    )
 
     pool.all.setComponents()
 
     for (const segment of staticQuerySegments) {
       pool.single
-        .runQueries({ pageQueryIds: [], staticQueryIds: segment })
+        .runQueries({
+          pageQueryIds: [],
+          staticQueryIds: segment,
+          sliceQueryIds: [],
+        })
         .then(replayWorkerActions)
         .then(() => {
           activity.tick(segment.length)
@@ -71,7 +87,11 @@ export async function runQueriesInWorkersQueue(
 
     for (const segment of pageQuerySegments) {
       pool.single
-        .runQueries({ pageQueryIds: segment, staticQueryIds: [] })
+        .runQueries({
+          pageQueryIds: segment,
+          staticQueryIds: [],
+          sliceQueryIds: [],
+        })
         .then(replayWorkerActions)
         .then(() => {
           activity.tick(segment.length)
@@ -90,20 +110,42 @@ export async function runQueriesInWorkersQueue(
   }
 }
 
-export async function mergeWorkerState(pool: GatsbyWorkerPool): Promise<void> {
-  const activity = reporter.activityTimer(`Merge worker state`)
+export async function mergeWorkerState(
+  pool: GatsbyWorkerPool,
+  parentSpan?: Span
+): Promise<void> {
+  const activity = reporter.activityTimer(`Merge worker state`, { parentSpan })
   activity.start()
 
   for (const { workerId } of pool.getWorkerInfo()) {
-    const state = loadPartialStateFromDisk([`queries`], String(workerId))
+    const state = loadPartialStateFromDisk(
+      [`queries`, `telemetry`],
+      String(workerId)
+    )
     const queryStateChunk = state.queries as IGatsbyState["queries"]
+    const queryStateTelemetryChunk =
+      state.telemetry as IGatsbyState["telemetry"]
+
+    const payload: {
+      queryStateChunk?: IGatsbyState["queries"]
+      queryStateTelemetryChunk?: IGatsbyState["telemetry"]
+    } = {}
+
     if (queryStateChunk) {
+      payload.queryStateChunk = queryStateChunk
+    }
+
+    if (queryStateTelemetryChunk) {
+      payload.queryStateTelemetryChunk = queryStateTelemetryChunk
+    }
+
+    if (Object.keys(payload).length) {
       // When there are too little queries, some worker can be inactive and its state is empty
       store.dispatch({
         type: `MERGE_WORKER_QUERY_STATE`,
         payload: {
           workerId,
-          queryStateChunk,
+          ...payload,
         },
       })
       await new Promise(resolve => process.nextTick(resolve))

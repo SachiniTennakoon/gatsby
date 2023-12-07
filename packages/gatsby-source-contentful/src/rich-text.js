@@ -1,8 +1,9 @@
+// @ts-check
 import { documentToReactComponents } from "@contentful/rich-text-react-renderer"
 import resolveResponse from "contentful-resolve-response"
 
-function renderRichText({ raw, references }, options = {}) {
-  const richText = JSON.parse(raw)
+export function renderRichText({ raw, references }, options = {}) {
+  const richText = JSON.parse(raw || null)
 
   // If no references are given, there is no need to resolve them
   if (!references || !references.length) {
@@ -43,5 +44,3 @@ function renderRichText({ raw, references }, options = {}) {
 
   return documentToReactComponents(resolved[0].richText, options)
 }
-
-exports.renderRichText = renderRichText
