@@ -110,6 +110,10 @@ function createContentfulClientOptions({
     proxy: pluginConfig.get(`proxy`),
     integration: `gatsby-source-contentful`,
     responseLogger: response => {
+      reporter.info(`RESPONSE`, JSON.stringify(response))
+      reporter.info(`syncItemCount`, JSON.stringify(syncItemCount))
+      reporter.info(`syncProgress`, JSON.stringify(syncProgress))
+
       function createMetadataLog(response) {
         if (!response.headers) {
           return null
@@ -284,12 +288,31 @@ export async function fetchContent({ syncToken, pluginConfig, reporter }) {
   let lastCurrentPageLimit
   let syncSuccess = false
   try {
+
+    reporter.info(`PAGE LIMIT`, currentPageLimit, pageLimit)
+    syncProgress = reporter.createProgress(
+      `Contentful: ${syncToken ? `Sync changed items` : `Sync all items`}`,
+      currentPageLimit,
+      0
+    )
+    syncProgress.start()
+    reporter.verbose(`Contentful: Sync ${currentPageLimit} items per page.`)
+
+
     while (!syncSuccess) {
       try {
         const query = syncToken
+
+          ? { nextSyncToken: syncToken, ...basicSyncConfig }
+          : { initial: true, ...basicSyncConfig }
+        currentSyncData = await client.sync(query)
+        reporter.info(`syncProgress-2`, JSON.stringify(syncProgress))
+
+
           ? { nextSyncToken: syncToken, resolveLinks: false }
           : { initial: true, limit: currentPageLimit, resolveLinks: false }
         currentSyncData = await syncClient.sync(query)
+
         syncSuccess = true
       } catch (e) {
         // Back off page limit if responses content length exceeds Contentfuls limits.
@@ -327,6 +350,12 @@ export async function fetchContent({ syncToken, pluginConfig, reporter }) {
       },
     })
   } finally {
+
+    reporter.info(`syncProgress-3`, JSON.stringify(syncProgress))
+
+    syncProgress.done()
+  }
+
     // Fix output when there was no new data in Contentful
     if (
       !currentSyncData?.entries.length &&
@@ -337,6 +366,7 @@ export async function fetchContent({ syncToken, pluginConfig, reporter }) {
       syncProgress.tick()
       syncProgress.total = 1
     }
+
 
     syncProgress.done()
   }
